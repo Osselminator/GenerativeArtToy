@@ -109,6 +109,10 @@
     <input type="range" id="ellipseSpeedSlider" min="0" max="3" step="0.05" value="1">
   </div>
   <div id="speedControl">
+    <label for="orbitRadiusSlider">Orbit Radius <span id="orbitRadiusValue">1.0x</span></label>
+    <input type="range" id="orbitRadiusSlider" min="0" max="3" step="0.05" value="1">
+  </div>
+  <div id="speedControl">
     <label for="blurSlider">Blur <span id="blurValue">0%</span></label>
     <input type="range" id="blurSlider" min="0" max="100" step="1" value="0">
   </div>
@@ -122,12 +126,13 @@ const TRIS = [[324, 325, 30], [324, 30, 0], [325, 324, 1], [325, 1, 31], [325, 3
 const SPEEDS = [-0.13413903821884104, 0.0842810515686854, -0.1355115711945276]; // radians per second, [x, y, z]
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a1d);
+scene.background = null; // transparent - page body provides the dark background,
+                         // so the CSS brightness filter only affects geometry
 
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.5, 100);
 camera.position.set(0, 0, 7);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true, alpha: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio * 2, 4)); // extra supersampling for smoother edges
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
@@ -505,13 +510,25 @@ speedSlider.addEventListener('input', () => {
   speedValueLabel.textContent = speedMultiplier.toFixed(2) + 'x';
 });
 
-// --- Dimmer control (scales overall scene lighting) ---
+// --- Unified canvas filter (brightness + blur combined) ---
+// CSS filters affect the entire rendered image, including unlit materials
+// like the cube edge lines, which scene lights can't touch.
+let currentBrightness = 1.0; // 1.0 = 100%
+let currentBlurPx = 0;
+
+function updateCanvasFilter() {
+  const parts = [];
+  if (currentBrightness !== 1.0) parts.push(`brightness(${currentBrightness})`);
+  if (currentBlurPx > 0) parts.push(`blur(${currentBlurPx}px)`);
+  renderer.domElement.style.filter = parts.length ? parts.join(' ') : 'none';
+}
+
+// --- Dimmer control (whole-scene brightness via CSS filter) ---
 const dimmerSlider = document.getElementById('dimmerSlider');
 const dimmerValueLabel = document.getElementById('dimmerValue');
 function applyDimmer(value) {
-  ambientLight.intensity = baseLightIntensities.ambient * value;
-  dirLight.intensity = baseLightIntensities.dir1 * value;
-  dirLight2.intensity = baseLightIntensities.dir2 * value;
+  currentBrightness = value;
+  updateCanvasFilter();
   dimmerValueLabel.textContent = Math.round(value * 100) + '%';
 }
 dimmerSlider.addEventListener('input', () => {
@@ -528,13 +545,22 @@ ellipseSpeedSlider.addEventListener('input', () => {
   ellipseSpeedValueLabel.textContent = ellipseSpeedMultiplier.toFixed(2) + 'x';
 });
 
+// --- Orbit radius control (scales how far objects orbit from the center) ---
+let orbitRadiusMultiplier = 1.0;
+const orbitRadiusSlider = document.getElementById('orbitRadiusSlider');
+const orbitRadiusValueLabel = document.getElementById('orbitRadiusValue');
+orbitRadiusSlider.addEventListener('input', () => {
+  orbitRadiusMultiplier = parseFloat(orbitRadiusSlider.value);
+  orbitRadiusValueLabel.textContent = orbitRadiusMultiplier.toFixed(2) + 'x';
+});
+
 // --- Blur control (whole-image CSS blur on the canvas, 0% crisp -> 100% fog) ---
 const blurSlider = document.getElementById('blurSlider');
 const blurValueLabel = document.getElementById('blurValue');
 const MAX_BLUR_PX = 35; // at 100%, lines fully dissolve into fog
 function applyBlur(percent) {
-  const px = (percent / 100) * MAX_BLUR_PX;
-  renderer.domElement.style.filter = px > 0 ? `blur(${px}px)` : 'none';
+  currentBlurPx = (percent / 100) * MAX_BLUR_PX;
+  updateCanvasFilter();
   blurValueLabel.textContent = Math.round(percent) + '%';
 }
 blurSlider.addEventListener('input', () => {
@@ -555,7 +581,7 @@ function animate() {
 
   // Advance the main sphere along its own slow elliptical orbit
   mainOrbit.phase += mainOrbit.speed * ellipseSpeedMultiplier * dt;
-  mesh.position.copy(mainOrbit.positionAt(mainOrbit.phase));
+  mesh.position.copy(mainOrbit.positionAt(mainOrbit.phase)).multiplyScalar(orbitRadiusMultiplier);
 
   // Smooth pulse factor between SCALE_MIN and SCALE_MAX (main sphere, phase 0)
   const mid = (SCALE_MIN + SCALE_MAX) / 2;
@@ -574,7 +600,7 @@ function animate() {
 
     // Advance along the orbit path, centered on the main sphere's current position
     entry.orbit.phase += entry.orbit.speed * ellipseSpeedMultiplier * dt;
-    entry.mesh.position.copy(mesh.position).add(entry.orbit.positionAt(entry.orbit.phase));
+    entry.mesh.position.copy(mesh.position).add(entry.orbit.positionAt(entry.orbit.phase).multiplyScalar(orbitRadiusMultiplier));
   }
 
   renderer.render(scene, camera);
