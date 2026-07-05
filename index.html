@@ -116,6 +116,10 @@
     <label for="blurSlider">Blur <span id="blurValue">0%</span></label>
     <input type="range" id="blurSlider" min="0" max="100" step="1" value="0">
   </div>
+  <div id="speedControl">
+    <label for="blurCycleSlider">Blur Cycle <span id="blurCycleValue">Off</span></label>
+    <input type="range" id="blurCycleSlider" min="0" max="150" step="1" value="0">
+  </div>
 </div>
 <div id="vignette"></div>
 <div id="clock">00:00</div>
@@ -129,7 +133,7 @@ const scene = new THREE.Scene();
 scene.background = null; // transparent - page body provides the dark background,
                          // so the CSS brightness filter only affects geometry
 
-const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.5, 100);
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.05, 200);
 camera.position.set(0, 0, 7);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true, alpha: true });
@@ -568,12 +572,38 @@ blurSlider.addEventListener('input', () => {
 });
 applyBlur(parseFloat(blurSlider.value));
 
+// --- Blur cycle (oscillates clear -> fully blurred -> clear) ---
+// Slider sets the duration of one full cycle in seconds; 0 = off.
+let blurCyclePeriod = 0; // seconds, 0 = disabled
+let blurCycleTime = 0;   // running time within the oscillation
+const blurCycleSlider = document.getElementById('blurCycleSlider');
+const blurCycleValueLabel = document.getElementById('blurCycleValue');
+blurCycleSlider.addEventListener('input', () => {
+  blurCyclePeriod = parseFloat(blurCycleSlider.value);
+  if (blurCyclePeriod > 0) {
+    blurCycleValueLabel.textContent = blurCyclePeriod + 's';
+  } else {
+    blurCycleValueLabel.textContent = 'Off';
+    blurCycleTime = 0;
+    // restore whatever the manual Blur slider is set to
+    applyBlur(parseFloat(blurSlider.value));
+  }
+});
+
 function animate() {
   requestAnimationFrame(animate);
   const now = performance.now();
   const dt = (now - lastTime) / 1000;
   lastTime = now;
   elapsed += dt;
+
+  // Blur oscillation: overrides the manual blur while active
+  if (blurCyclePeriod > 0) {
+    blurCycleTime += dt;
+    const t = (1 - Math.cos((2 * Math.PI / blurCyclePeriod) * blurCycleTime)) / 2; // 0..1..0
+    currentBlurPx = t * MAX_BLUR_PX;
+    updateCanvasFilter();
+  }
 
   mesh.rotation.x += SPEEDS[0] * speedMultiplier * dt;
   mesh.rotation.y += SPEEDS[1] * speedMultiplier * dt;
