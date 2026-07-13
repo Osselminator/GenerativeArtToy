@@ -133,6 +133,10 @@
     <label for="blurCycleSlider">Blur Cycle <span id="blurCycleValue">Off</span></label>
     <input type="range" id="blurCycleSlider" min="0" max="150" step="1" value="0">
   </div>
+  <div id="actionButtons">
+    <button id="savePresetBtn" title="Save current settings as your preset" style="width: auto; flex: 1; padding: 0 10px;">Save</button>
+    <button id="loadPresetBtn" title="Load your saved preset" style="width: auto; flex: 1; padding: 0 10px;">Load</button>
+  </div>
 </div>
 <div id="vignette"></div>
 <div id="clock">00:00</div>
@@ -605,6 +609,82 @@ blurCycleSlider.addEventListener('input', () => {
     applyBlur(parseFloat(blurSlider.value));
   }
 });
+
+// --- Preset save/load (stored in the browser via localStorage) ---
+const PRESET_KEY = 'icosphereViewerPreset';
+
+function collectPreset() {
+  return {
+    speed: parseFloat(speedSlider.value),
+    brightness: parseFloat(dimmerSlider.value),
+    orbitSpeed: parseFloat(ellipseSpeedSlider.value),
+    orbitRadius: parseFloat(orbitRadiusSlider.value),
+    blur: parseFloat(blurSlider.value),
+    blurCycle: parseFloat(blurCycleSlider.value),
+    shape: currentShape,
+    colorMode: colorMode,
+    satelliteCount: extraSpheres.length,
+  };
+}
+
+function savePreset() {
+  try {
+    localStorage.setItem(PRESET_KEY, JSON.stringify(collectPreset()));
+    flashButton(savePresetBtn, 'Saved!');
+  } catch (err) {
+    flashButton(savePresetBtn, 'Failed');
+  }
+}
+
+function loadPreset() {
+  let preset;
+  try {
+    const raw = localStorage.getItem(PRESET_KEY);
+    if (!raw) { flashButton(loadPresetBtn, 'None saved'); return; }
+    preset = JSON.parse(raw);
+  } catch (err) {
+    flashButton(loadPresetBtn, 'Failed');
+    return;
+  }
+
+  // Sliders
+  speedSlider.value = preset.speed;
+  speedSlider.dispatchEvent(new Event('input'));
+  dimmerSlider.value = preset.brightness;
+  dimmerSlider.dispatchEvent(new Event('input'));
+  ellipseSpeedSlider.value = preset.orbitSpeed;
+  ellipseSpeedSlider.dispatchEvent(new Event('input'));
+  orbitRadiusSlider.value = preset.orbitRadius;
+  orbitRadiusSlider.dispatchEvent(new Event('input'));
+  blurSlider.value = preset.blur;
+  blurSlider.dispatchEvent(new Event('input'));
+  blurCycleSlider.value = preset.blurCycle;
+  blurCycleSlider.dispatchEvent(new Event('input'));
+
+  // Shape
+  swapGeometry(preset.shape === 'cube' ? 'cube' : 'sphere');
+
+  // Color mode (toggleColorMode flips the current state, so only call if it differs)
+  if (colorMode !== preset.colorMode) toggleColorMode();
+
+  // Satellite count: reset then re-add to match saved count
+  resetScene();
+  const targetCount = preset.satelliteCount || 0;
+  for (let i = 0; i < targetCount; i++) addRandomSphere();
+
+  flashButton(loadPresetBtn, 'Loaded!');
+}
+
+function flashButton(btn, text) {
+  const original = btn.textContent;
+  btn.textContent = text;
+  setTimeout(() => { btn.textContent = original; }, 1200);
+}
+
+const savePresetBtn = document.getElementById('savePresetBtn');
+const loadPresetBtn = document.getElementById('loadPresetBtn');
+savePresetBtn.addEventListener('click', savePreset);
+loadPresetBtn.addEventListener('click', loadPreset);
 
 function animate() {
   requestAnimationFrame(animate);
